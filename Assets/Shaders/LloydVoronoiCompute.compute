@@ -1,0 +1,68 @@
+#pragma kernel DrawVoronoi
+
+RWTexture2D<float4>      Result;
+StructuredBuffer<float2> Seeds;
+StructuredBuffer<float4> Colors;
+
+int   NumSeeds;
+int   TextureSize;
+float EdgeThreshold;
+bool  ShowEdges;
+bool  ShowSeeds;
+
+float SqDist(float2 a, float2 b)
+{
+    float2 d = a - b;
+    return dot(d, d);
+}
+
+[numthreads(8, 8, 1)]
+void DrawVoronoi(uint3 id : SV_DispatchThreadID)
+{
+    if ((int)id.x >= TextureSize || (int)id.y >= TextureSize) return;
+
+    float2 uv = float2(
+        (float)id.x / (float)TextureSize,
+        (float)id.y / (float)TextureSize
+    );
+
+    int   nearestIdx = 0;
+    float minDist    = 1e10f;
+    float secondDist = 1e10f;
+
+    for (int i = 0; i < NumSeeds; i++)
+    {
+        float d = SqDist(uv, Seeds[i]);
+        if (d < minDist)
+        {
+            secondDist = minDist;
+            minDist    = d;
+            nearestIdx = i;
+        }
+        else if (d < secondDist)
+        {
+            secondDist = d;
+        }
+    }
+
+    float4 cellColor = Colors[nearestIdx];
+
+    float edgeFactor = 0.0f;
+    if (ShowEdges)
+    {
+        float distToEdge = sqrt(secondDist) - sqrt(minDist);
+        edgeFactor = 1.0f - smoothstep(0.0f, EdgeThreshold * 2.0f, distToEdge);
+    }
+
+    float4 edgeColor = float4(0.05f, 0.03f, 0.01f, 1.0f);
+    float4 output    = lerp(cellColor, edgeColor, edgeFactor);
+
+    if (ShowSeeds)
+    {
+        float seedRadius = 3.0f / (float)TextureSize;
+        if (sqrt(minDist) < seedRadius)
+            output = float4(0.71f, 0.58f, 0.44f, 1.0f);
+    }
+
+    Result[id.xy] = output;
+}

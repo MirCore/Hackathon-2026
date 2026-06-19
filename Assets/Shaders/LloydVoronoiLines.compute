@@ -1,0 +1,49 @@
+#pragma kernel ClearRT
+#pragma kernel DrawLines
+
+RWTexture2D<float4>      Result;
+StructuredBuffer<float2> Seeds;
+
+int   NumSeeds;
+int   TextureSize;
+float EdgeThreshold;
+float LineAlpha;
+float SeedRadius;
+
+[numthreads(8, 8, 1)]
+void ClearRT(uint3 id : SV_DispatchThreadID)
+{
+    if ((int)id.x >= TextureSize || (int)id.y >= TextureSize) return;
+    Result[id.xy] = float4(0, 0, 0, 1);  // 全黑
+}
+
+float SqDist(float2 a, float2 b) { float2 d = a-b; return dot(d,d); }
+
+[numthreads(8, 8, 1)]
+void DrawLines(uint3 id : SV_DispatchThreadID)
+{
+    if ((int)id.x >= TextureSize || (int)id.y >= TextureSize) return;
+
+    float2 uv = float2((float)id.x/(float)TextureSize,
+                       (float)id.y/(float)TextureSize);
+
+    int   nearestIdx = 0;
+    float minDist    = 1e10f;
+    float secondDist = 1e10f;
+
+    for (int i = 0; i < NumSeeds; i++)
+    {
+        float d = SqDist(uv, Seeds[i]);
+        if (d < minDist)       { secondDist=minDist; minDist=d; nearestIdx=i; }
+        else if (d<secondDist) { secondDist=d; }
+    }
+
+    float distToEdge = sqrt(secondDist) - sqrt(minDist);
+    float edgeFactor = 1.0f - smoothstep(0.0f, EdgeThreshold, distToEdge);
+    float seedR      = SeedRadius / (float)TextureSize;
+    float isSeed     = sqrt(minDist) < seedR ? 1.0f : 0.0f;
+    float brightness = max(edgeFactor, isSeed) * LineAlpha;
+
+    if (brightness > 0.01f)
+        Result[id.xy] = float4(brightness, brightness, brightness, 1.0f);
+}
